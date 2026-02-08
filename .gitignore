@@ -21,7 +21,8 @@ Thumbs.db
 
 # Project specific
 demo/
-*.png
+画面*.png
+dashbord.png
 DESIGN.md
 PRE_EXECUTION_GUIDE.md
 zenn-article-agent-teams.md
@@ -31,5 +32,6 @@ zenn-article-agent-teams.md
 現在のダッシュボードの表示内容.txt
 claude-code実行画面上に表示されていたメッセージ.txt
 
-# Keep requirements.txt
+# Keep requirements.txt and images
 !requirements.txt
+!images/
