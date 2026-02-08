@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project specific
+demo/
+*.png
+DESIGN.md
+PRE_EXECUTION_GUIDE.md
+zenn-article-agent-teams.md
+依頼内容.txt
+改善依頼.txt
+調査内容.txt
+現在のダッシュボードの表示内容.txt
+claude-code実行画面上に表示されていたメッセージ.txt
+
+# Keep requirements.txt
+!requirements.txt
