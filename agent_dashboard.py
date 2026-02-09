@@ -462,6 +462,32 @@ class InboxWatcher(FileSystemEventHandler):
             if summary:
                 text = summary
 
+            # 送信元エージェントの状態を更新
+            if from_agent in self.agents:
+                sender = self.agents[from_agent]
+                sender.last_updated = datetime.now()
+                if msg_type == "idle_notification":
+                    sender.status = "待機中"
+                    sender.progress = 0
+                elif msg_type == "shutdown_ack" or msg_type == "shutdown_request":
+                    sender.status = "完了"
+                    sender.progress = 100
+                elif msg_type == "task_completed":
+                    sender.status = "完了"
+                    sender.progress = 100
+                else:
+                    sender.status = "稼働中"
+                    sender.progress = 50
+
+            # 受信者エージェントの状態を更新（メッセージを受信 = 稼働中）
+            if agent_name in self.agents:
+                receiver = self.agents[agent_name]
+                receiver.last_updated = datetime.now()
+                if receiver.status not in ["完了"]:
+                    receiver.status = "稼働中"
+                    if receiver.progress < 50:
+                        receiver.progress = 50
+
             # 色情報を取得
             from_color = msg.get("color", None)
 
@@ -620,6 +646,8 @@ class Dashboard:
         self.file_log = file_log
         self.start_time = datetime.now()
         self.console = Console()
+        self._layout = None  # Layoutオブジェクトのキャッシュ
+        self._footer_panel = None  # フッターのキャッシュ
 
     def make_layout(self) -> Layout:
         """レイアウトを構築（コンテンツに応じて動的にサイズ調整）"""
@@ -650,6 +678,7 @@ class Dashboard:
         body_ratio = max(body_lines, 10)
         bottom_ratio = max(bottom_lines, 6)
 
+        # フッターを含むレイアウト
         layout.split_column(
             Layout(name="header", size=3),
             Layout(name="body", ratio=body_ratio),
@@ -671,16 +700,23 @@ class Dashboard:
 
     def render(self) -> Layout:
         """全体を描画"""
-        layout = self.make_layout()
+        # 初回のみLayoutを作成
+        if self._layout is None:
+            self._layout = self.make_layout()
 
-        layout["header"].update(self._make_header())
-        layout["agents"].update(self._make_agents_panel())
-        layout["tasks"].update(self._make_tasks_panel())
-        layout["comms"].update(self._make_comms_panel())
-        layout["files"].update(self._make_files_panel())
-        layout["footer"].update(self._make_footer_panel())
+        # ダッシュボード部分を更新
+        self._layout["header"].update(self._make_header())
+        self._layout["agents"].update(self._make_agents_panel())
+        self._layout["tasks"].update(self._make_tasks_panel())
+        self._layout["comms"].update(self._make_comms_panel())
+        self._layout["files"].update(self._make_files_panel())
 
-        return layout
+        # フッターは初回のみ作成・設定（以降は更新しない）
+        if self._footer_panel is None:
+            self._footer_panel = self._make_footer_panel()
+            self._layout["footer"].update(self._footer_panel)
+
+        return self._layout
 
     def _make_header(self) -> Panel:
         """ヘッダーパネル"""
@@ -717,8 +753,17 @@ class Dashboard:
             status_icon = agent.status_icon
             status_color = agent.status_color
 
-            # プログレスバー
-            progress_bar = ProgressBar(total=100, completed=agent.progress, width=20)
+            # プログレスバー（背景色で描画）
+            bar_width = 12
+            filled = int(bar_width * agent.progress / 100)
+            empty = bar_width - filled
+
+            # ステータス表示（全角文字の幅を考慮してパディング）
+            # 「待機中」「作業中」「稼働中」= 3文字(6幅)、「完了」= 2文字(4幅)、「エラー」= 3文字(6幅)
+            status_text = agent.status
+            # 全角文字数を数えて半角スペースでパディング
+            display_width = sum(2 if ord(c) > 127 else 1 for c in status_text)
+            status_padded = status_text + " " * (8 - display_width)
 
             # タスク情報
             task_info = ""
@@ -736,8 +781,17 @@ class Dashboard:
                 row.append(f"▍{agent.icon} ", style=agent.color)
                 row.append(f"{agent.name:15s} ", style="bold")
                 row.append(f"{status_icon} ", style=status_color)
-                row.append(f"{agent.status:6s} ", style=status_color)
-                row.append(f"{progress_bar} {agent.progress:3d}% ", style=status_color)
+                row.append(status_padded, style=status_color)
+                # ステータスに応じたバーの背景色
+                if agent.status == "完了":
+                    bar_bg = "on green"
+                elif agent.status in ["稼働中", "作業中"]:
+                    bar_bg = "on dodger_blue2"
+                else:
+                    bar_bg = "on grey30"
+                row.append(" " * filled, style=bar_bg)
+                row.append(" " * empty, style="on grey15")
+                row.append(f" {agent.progress:3d}% ", style=status_color)
                 row.append(f"{task_info:30s} ", style="dim")
                 row.append(f"{time_str}", style="dim")
             else:
@@ -745,8 +799,10 @@ class Dashboard:
                 row.append(f"▍{agent.icon} ", style=f"dim {agent.color}")
                 row.append(f"{agent.name:15s} ", style="dim")
                 row.append(f"{status_icon} ", style="dim")
-                row.append(f"{agent.status:6s} ", style="dim")
-                row.append(f"{progress_bar} {agent.progress:3d}% ", style="dim")
+                row.append(status_padded, style="dim")
+                row.append(" " * filled, style="on grey30")
+                row.append(" " * empty, style="on grey15")
+                row.append(f" {agent.progress:3d}% ", style="dim")
                 row.append(f"{task_info:30s} ", style="dim")
                 row.append(f"{time_str}", style="dim")
 
@@ -1227,7 +1283,8 @@ def start_dashboard(team_name: str, config: dict, discovery: TeamDiscovery,
 
     # メインループ
     try:
-        with Live(dashboard.render(), refresh_per_second=1000 / interval, console=console) as live:
+        # screen=Trueで代替スクリーンバッファを使用（ちらつき防止）
+        with Live(dashboard.render(), refresh_per_second=4, console=console, screen=True) as live:
             while not quit_flag.is_set():
                 time.sleep(interval / 1000)
                 live.update(dashboard.render())
@@ -1558,7 +1615,8 @@ def run_demo_mode(claude_dir: str, watch_dir: str, interval: int):
         dashboard = Dashboard(team_name, agents, task_store, message_log, file_log)
 
         try:
-            with Live(dashboard.render(), refresh_per_second=1000 / interval, console=console) as live:
+            # screen=Trueで代替スクリーンバッファを使用（ちらつき防止）
+            with Live(dashboard.render(), refresh_per_second=4, console=console, screen=True) as live:
                 while scenario_thread.is_alive():
                     time.sleep(interval / 1000)
                     live.update(dashboard.render())
