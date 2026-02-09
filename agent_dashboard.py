@@ -409,6 +409,11 @@ class InboxWatcher(FileSystemEventHandler):
         if event.is_directory or not event.src_path.endswith(".json"):
             return
 
+        # .lock等のシステムファイルを無視
+        filename = Path(event.src_path).name
+        if filename.startswith("."):
+            return
+
         agent_name = Path(event.src_path).stem
         new_messages = self._parse_inbox(event.src_path, agent_name)
 
@@ -1239,9 +1244,9 @@ def start_dashboard(team_name: str, config: dict, discovery: TeamDiscovery,
     # 初期読み込み
     if inbox_dir.exists():
         observer.schedule(inbox_watcher, str(inbox_dir), recursive=False)
-        for inbox_file in inbox_dir.glob("*.json"):
-            if not inbox_file.name.startswith("."):
-                inbox_watcher.on_modified(type('Event', (), {'is_directory': False, 'src_path': str(inbox_file)})())
+        inbox_files = [f for f in inbox_dir.glob("*.json") if not f.name.startswith(".")]
+        for inbox_file in inbox_files:
+            inbox_watcher.on_modified(type('Event', (), {'is_directory': False, 'src_path': str(inbox_file)})())
 
     # タスク監視
     tasks_dir = Path(claude_dir) / "tasks" / team_name
@@ -1288,6 +1293,33 @@ def start_dashboard(team_name: str, config: dict, discovery: TeamDiscovery,
 
     # 少し待機してからダッシュボード表示
     time.sleep(1)
+
+    # ポーリングスレッド: watchdogのイベント取りこぼし対策
+    def poll_inboxes_and_tasks():
+        """定期的にinbox/taskファイルを再読み込み（watchdogフォールバック）"""
+        while not quit_flag.is_set():
+            time.sleep(2)  # 2秒間隔でポーリング
+            try:
+                # inbox再読み込み
+                if inbox_dir.exists():
+                    for inbox_file in inbox_dir.glob("*.json"):
+                        if not inbox_file.name.startswith("."):
+                            inbox_watcher.on_modified(
+                                type('Event', (), {'is_directory': False, 'src_path': str(inbox_file)})()
+                            )
+                # task再読み込み
+                _tasks_dir = Path(claude_dir) / "tasks" / team_name
+                if _tasks_dir.exists():
+                    for task_file in _tasks_dir.glob("*.json"):
+                        if not task_file.name.startswith("."):
+                            task_watcher._handle_task_change(
+                                type('Event', (), {'is_directory': False, 'src_path': str(task_file)})()
+                            )
+            except Exception:
+                pass
+
+    poll_thread = threading.Thread(target=poll_inboxes_and_tasks, daemon=True)
+    poll_thread.start()
 
     # メインループ
     try:
