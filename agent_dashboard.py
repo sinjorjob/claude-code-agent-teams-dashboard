@@ -753,8 +753,8 @@ class Dashboard:
             status_icon = agent.status_icon
             status_color = agent.status_color
 
-            # プログレスバー（背景色で描画）
-            bar_width = 12
+            # プログレスバー（罫線文字+グラデーション色で描画）
+            bar_width = 16
             filled = int(bar_width * agent.progress / 100)
             empty = bar_width - filled
 
@@ -782,15 +782,24 @@ class Dashboard:
                 row.append(f"{agent.name:15s} ", style="bold")
                 row.append(f"{status_icon} ", style=status_color)
                 row.append(status_padded, style=status_color)
-                # ステータスに応じたバーの背景色
-                if agent.status == "完了":
-                    bar_bg = "on green"
-                elif agent.status in ["稼働中", "作業中"]:
-                    bar_bg = "on dodger_blue2"
+                # ステータスに応じたバーの色（罫線文字で描画）
+                if agent.progress == 0:
+                    row.append("─" * bar_width, style="dim")
+                elif agent.progress >= 100:
+                    row.append("━" * bar_width, style="bold #4ade80")
                 else:
-                    bar_bg = "on grey30"
-                row.append(" " * filled, style=bar_bg)
-                row.append(" " * empty, style="on grey15")
+                    if agent.progress < 30:
+                        bar_color = "#f59e0b"
+                    elif agent.progress < 60:
+                        bar_color = "#22d3ee"
+                    elif agent.progress < 90:
+                        bar_color = "#818cf8"
+                    else:
+                        bar_color = "#4ade80"
+                    row.append("━" * filled, style=f"bold {bar_color}")
+                    row.append("╸", style=bar_color)
+                    if empty > 1:
+                        row.append("─" * (empty - 1), style="dim")
                 row.append(f" {agent.progress:3d}% ", style=status_color)
                 row.append(f"{task_info:30s} ", style="dim")
                 row.append(f"{time_str}", style="dim")
@@ -800,8 +809,7 @@ class Dashboard:
                 row.append(f"{agent.name:15s} ", style="dim")
                 row.append(f"{status_icon} ", style="dim")
                 row.append(status_padded, style="dim")
-                row.append(" " * filled, style="on grey30")
-                row.append(" " * empty, style="on grey15")
+                row.append("─" * bar_width, style="dim")
                 row.append(f" {agent.progress:3d}% ", style="dim")
                 row.append(f"{task_info:30s} ", style="dim")
                 row.append(f"{time_str}", style="dim")
