@@ -26,7 +26,7 @@ Claude Code Agent Teams で作成したチームの状態を、ターミナル�
 
 ## スクリーンショット
 
-![Dashboard Screenshot](images/dashboard.png)
+![Dashboard Screenshot](images/dashboard.jpg)
 
 **画面の構成**:
 - 🔷 **エージェント状態**: 各メンバーのステータス、使用モデル、現在のタスク
